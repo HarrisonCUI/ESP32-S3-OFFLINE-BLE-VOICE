@@ -3,10 +3,21 @@ import wave
 import struct
 import time
 import os
+import subprocess
+import whisper
+import warnings
 from bleak import BleakClient, BleakScanner
+
+# Suppress some FP16 warnings from whisper on CPU
+warnings.filterwarnings("ignore", category=UserWarning)
 
 SERVICE_UUID = "19B10000-E8F2-537E-4F6C-D104768A1214"
 CHAR_UUID = "19B10001-E8F2-537E-4F6C-D104768A1214"
+COMMAND_UUID = "19B10002-E8F2-537E-4F6C-D104768A1214"
+
+print("Loading Whisper model (base)... This may take a few seconds.")
+model = whisper.load_model("base")
+print("Whisper model loaded!")
 
 # IMA ADPCM Decoder Variables
 index_table = [-1, -1, -1, -1, 2, 4, 6, 8]
@@ -67,11 +78,33 @@ def save_wav_file():
             wav_file.setsampwidth(2) # 16-bit
             wav_file.setframerate(16000)
             wav_file.writeframes(pcm_data)
-        print(f"Saved successfully. You can now pass this file to Whisper.")
+        print(f"Saved successfully. Running Whisper transcription...")
+        
+        # --- Local Whisper Transcription ---
+        result = model.transcribe(filepath, language="zh")
+        text = result["text"].strip()
+        
+        # Format the output elegantly
+        print("-" * 50)
+        print(f"🎙️  [语音识别结果]: \n\n   {text}\n")
+        print("-" * 50)
+        
+        # Clean up the audio file to save disk space
+        try:
+            os.remove(filepath)
+        except OSError:
+            pass
+            
         file_counter += 1
         pcm_data.clear() # Reset buffer for next recording
     else:
         print("\n[Save] No audio data to save.")
+
+def command_handler(sender, data):
+    if len(data) > 0 and data[0] == 0x01:
+        print("\n[Command] 'X' key pressed! Opening Terminal...")
+        # Execute the macOS command to open the Terminal app
+        subprocess.Popen(["open", "-a", "Terminal"])
 
 def notification_handler(sender, data):
     global pcm_data, last_receive_time, is_recording_active
@@ -127,8 +160,10 @@ async def main():
     print(f"Connecting to {target_address}...")
     async with BleakClient(target_address) as client:
         print("Connected! Hold SPACE on Cardputer to talk.")
+        print("Press 'X' to open Terminal on Mac.")
         print("(Audio will auto-save 1 second after you release SPACE. Press Ctrl+C to quit entirely)")
         await client.start_notify(CHAR_UUID, notification_handler)
+        await client.start_notify(COMMAND_UUID, command_handler)
         
         try:
             # Keep script running and monitor for silence (end of recording)
@@ -146,6 +181,7 @@ async def main():
             print("\nStopping script...")
             
         await client.stop_notify(CHAR_UUID)
+        await client.stop_notify(COMMAND_UUID)
         
         # Save any remaining data on exit
         if is_recording_active or len(pcm_data) > 0:

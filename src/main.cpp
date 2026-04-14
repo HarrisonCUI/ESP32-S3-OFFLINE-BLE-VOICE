@@ -7,9 +7,11 @@
 
 #define SERVICE_UUID        "19B10000-E8F2-537E-4F6C-D104768A1214"
 #define CHARACTERISTIC_UUID "19B10001-E8F2-537E-4F6C-D104768A1214"
+#define COMMAND_UUID        "19B10002-E8F2-537E-4F6C-D104768A1214"
 
 BLEServer* pServer = NULL;
 BLECharacteristic* pCharacteristic = NULL;
+BLECharacteristic* pCommandCharacteristic = NULL;
 bool deviceConnected = false;
 
 M5Canvas canvas;
@@ -101,6 +103,15 @@ void setup() {
                         BLECharacteristic::PROPERTY_NOTIFY
                       );
     pCharacteristic->addDescriptor(new BLE2902());
+
+    // Add Command Characteristic for remote control
+    pCommandCharacteristic = pService->createCharacteristic(
+                        COMMAND_UUID,
+                        BLECharacteristic::PROPERTY_READ   |
+                        BLECharacteristic::PROPERTY_NOTIFY
+                      );
+    pCommandCharacteristic->addDescriptor(new BLE2902());
+
     pService->start();
 
     BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
@@ -134,12 +145,25 @@ void setup() {
 int16_t mic_buf[CHUNK_SIZE];
 uint8_t ble_buf[CHUNK_SIZE / 2];
 bool isRecording = false;
+bool wasXPressed = false;
 
 void loop() {
     M5Cardputer.update();
     
-    // Send audio if connected and space is pressed
     if (deviceConnected) {
+        // --- Command Logic: Press 'X' to Open Terminal ---
+        bool isXPressed = M5Cardputer.Keyboard.isKeyPressed('x') || M5Cardputer.Keyboard.isKeyPressed('X');
+        if (isXPressed && !wasXPressed) {
+            uint8_t cmd = 0x01; // 0x01 = Open Terminal Command
+            pCommandCharacteristic->setValue(&cmd, 1);
+            pCommandCharacteristic->notify();
+            M5Cardputer.Display.fillCircle(220, 20, 10, BLUE); // Blue indicator for command
+        } else if (!isXPressed && wasXPressed) {
+            M5Cardputer.Display.fillCircle(220, 20, 10, BLACK); // Clear command indicator
+        }
+        wasXPressed = isXPressed;
+
+        // --- Audio Logic: Press SPACE to record ---
         if (M5Cardputer.Keyboard.isKeyPressed(' ')) {
             if (!isRecording) {
                 // Draw indicator once when pressed
