@@ -16,8 +16,8 @@ SERVICE_UUID = "19B10000-E8F2-537E-4F6C-D104768A1214"
 CHAR_UUID = "19B10001-E8F2-537E-4F6C-D104768A1214"
 COMMAND_UUID = "19B10002-E8F2-537E-4F6C-D104768A1214"
 
-print("Loading Whisper model (base)... This may take a few seconds.")
-model = whisper.load_model("base")
+print("Loading Whisper model (small)... This may take a few seconds.")
+model = whisper.load_model("small")
 print("Whisper model loaded!")
 
 # IMA ADPCM Decoder Variables
@@ -82,7 +82,9 @@ def save_wav_file():
         print(f"Saved successfully. Running Whisper transcription...")
         
         # --- Local Whisper Transcription ---
-        result = model.transcribe(filepath, language="zh")
+        # Add initial prompt to help Whisper understand the context and improve accuracy for tech terms
+        prompt = "这是一段中文语音命令。包含日常用语和程序员术语，例如：Terminal, Mac, Git, Push, Python, Bug。"
+        result = model.transcribe(filepath, language="zh", initial_prompt=prompt)
         text = result["text"].strip()
         
         # Format the output elegantly

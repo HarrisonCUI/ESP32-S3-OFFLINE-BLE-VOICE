@@ -172,6 +172,16 @@ void loop() {
             }
             
             if (M5.Mic.record(mic_buf, CHUNK_SIZE, 16000)) {
+                // Pre-Compression Digital Gain (Boost Volume)
+                // This is CRITICAL for ADPCM: Low volume signals get destroyed by quantization noise.
+                // Multiplying by 4.0 ensures we use the full dynamic range of the 4-bit compression.
+                for (int i = 0; i < CHUNK_SIZE; i++) {
+                    int32_t boosted = mic_buf[i] * 4; 
+                    if (boosted > 32767) boosted = 32767;
+                    if (boosted < -32768) boosted = -32768;
+                    mic_buf[i] = (int16_t)boosted;
+                }
+
                 // Compress and pack 2 samples into 1 byte (4-bit ADPCM)
                 for (int i = 0; i < CHUNK_SIZE; i += 2) {
                     uint8_t nibble1 = adpcm_encode(mic_buf[i]);
