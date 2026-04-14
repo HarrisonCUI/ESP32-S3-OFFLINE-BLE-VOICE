@@ -6,6 +6,7 @@ import os
 import subprocess
 import whisper
 import warnings
+import pyperclip
 from bleak import BleakClient, BleakScanner
 
 # Suppress some FP16 warnings from whisper on CPU
@@ -88,6 +89,29 @@ def save_wav_file():
         print("-" * 50)
         print(f"🎙️  [语音识别结果]: \n\n   {text}\n")
         print("-" * 50)
+        
+        # --- Advanced Clipboard Paste via AppleScript ---
+        if text:
+            try:
+                # 1. Save current clipboard content to restore later
+                old_clipboard = pyperclip.paste()
+                
+                # 2. Put text into clipboard
+                pyperclip.copy(text)
+                print("[Whisper] ✂️  识别完成！文字已进入剪贴板。")
+                
+                # 3. Simulate "Cmd+V" via AppleScript to paste instantly
+                # This completely bypasses the IME (Input Method Editor)
+                applescript = 'tell application "System Events" to keystroke "v" using command down'
+                subprocess.run(['osascript', '-e', applescript])
+                print("[Whisper] ✨ 已自动粘贴到当前输入框！(完美绕过输入法)")
+                
+                # 4. Optional: Small delay then restore original clipboard
+                # time.sleep(0.5)
+                # pyperclip.copy(old_clipboard)
+            except Exception as e:
+                print(f"[Error] 剪贴板粘贴失败: {e}")
+                print("💡 提示：你可以直接手动按 Cmd+V 粘贴。")
         
         # Clean up the audio file to save disk space
         try:
