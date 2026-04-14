@@ -127,10 +127,22 @@ def save_wav_file():
         print("\n[Save] No audio data to save.")
 
 def command_handler(sender, data):
-    if len(data) > 0 and data[0] == 0x01:
-        print("\n[Command] 'X' key pressed! Opening Terminal...")
-        # Execute the macOS command to open the Terminal app
-        subprocess.Popen(["open", "-a", "Terminal"])
+    if len(data) > 0:
+        cmd = data[0]
+        if cmd == 0x01:
+            print("\n[Command] 'X' key pressed! Opening Terminal...")
+            # Execute the macOS command to open the Terminal app
+            subprocess.Popen(["open", "-a", "Terminal"])
+        elif cmd == 0x02:
+            print("\n[Command] '<' (,) key pressed! Switching to Left Space...")
+            # AppleScript to press Ctrl + Left Arrow (key code 123)
+            applescript = 'tell application "System Events" to key code 123 using control down'
+            subprocess.run(['osascript', '-e', applescript])
+        elif cmd == 0x03:
+            print("\n[Command] '>' (.) key pressed! Switching to Right Space...")
+            # AppleScript to press Ctrl + Right Arrow (key code 124)
+            applescript = 'tell application "System Events" to key code 124 using control down'
+            subprocess.run(['osascript', '-e', applescript])
 
 def notification_handler(sender, data):
     global pcm_data, last_receive_time, is_recording_active
@@ -185,9 +197,16 @@ async def main():
 
     print(f"Connecting to {target_address}...")
     async with BleakClient(target_address) as client:
-        print("Connected! Hold SPACE on Cardputer to talk.")
-        print("Press 'X' to open Terminal on Mac.")
-        print("(Audio will auto-save 1 second after you release SPACE. Press Ctrl+C to quit entirely)")
+        print("\n" + "="*50)
+        print("🎉 Connected Successfully!")
+        print("🎙️  How to use:")
+        print("   1. RAISE TO SPEAK: Tilt the Cardputer up towards your mouth to start recording.")
+        print("      (Press 'R' on Cardputer to toggle this feature ON/OFF, default is OFF)")
+        print("   2. BUTTON: Or hold the SPACE bar to talk.")
+        print("   3. COMMAND: Press 'X' to open Terminal on your Mac.")
+        print("   4. SCREEN: Press ',' (<) or '.' (>) OR Tilt Left/Right to switch Mac spaces.")
+        print("="*50 + "\n")
+        
         await client.start_notify(CHAR_UUID, notification_handler)
         await client.start_notify(COMMAND_UUID, command_handler)
         

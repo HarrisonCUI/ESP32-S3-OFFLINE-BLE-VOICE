@@ -13,6 +13,7 @@ BLEServer* pServer = NULL;
 BLECharacteristic* pCharacteristic = NULL;
 BLECharacteristic* pCommandCharacteristic = NULL;
 bool deviceConnected = false;
+bool raiseToSpeakEnabled = false; // Default OFF
 
 M5Canvas canvas;
 
@@ -67,7 +68,8 @@ class MyServerCallbacks: public BLEServerCallbacks {
       M5Cardputer.Display.fillScreen(BLACK);
       M5Cardputer.Display.setCursor(0, 0);
       M5Cardputer.Display.println("BLE Connected!");
-      M5Cardputer.Display.println("Press SPACE to Talk");
+      M5Cardputer.Display.println("SPACE: Talk");
+      M5Cardputer.Display.printf("R: Raise2Speak [%s]\n", raiseToSpeakEnabled ? "ON" : "OFF");
     }
     void onDisconnect(BLEServer* pServer) {
       deviceConnected = false;
@@ -89,6 +91,9 @@ void setup() {
     mic_cfg.stereo = false;
     M5.Mic.config(mic_cfg);
     M5.Mic.begin();
+    
+    // IMU (Accelerometer & Gyroscope) config
+    M5.Imu.begin();
 
     // BLE config
     BLEDevice::init("Cardputer");
@@ -151,7 +156,19 @@ void loop() {
     M5Cardputer.update();
     
     if (deviceConnected) {
-        // --- Command Logic: Press 'X' to Open Terminal ---
+        // --- Toggle Raise to Speak Logic ---
+        static bool wasRPressed = false;
+        bool isRPressed = M5Cardputer.Keyboard.isKeyPressed('r') || M5Cardputer.Keyboard.isKeyPressed('R');
+        if (isRPressed && !wasRPressed) {
+            raiseToSpeakEnabled = !raiseToSpeakEnabled;
+            // Clear line 3 (y=32, h=16) and print status
+            M5Cardputer.Display.fillRect(0, 32, 240, 16, BLACK);
+            M5Cardputer.Display.setCursor(0, 32);
+            M5Cardputer.Display.printf("R: Raise2Speak [%s]", raiseToSpeakEnabled ? "ON" : "OFF");
+        }
+        wasRPressed = isRPressed;
+
+        // --- Command Logic: Remote Controls ---
         bool isXPressed = M5Cardputer.Keyboard.isKeyPressed('x') || M5Cardputer.Keyboard.isKeyPressed('X');
         if (isXPressed && !wasXPressed) {
             uint8_t cmd = 0x01; // 0x01 = Open Terminal Command
@@ -163,10 +180,72 @@ void loop() {
         }
         wasXPressed = isXPressed;
 
-        // --- Audio Logic: Press SPACE to record ---
-        if (M5Cardputer.Keyboard.isKeyPressed(' ')) {
+        static bool wasLeftPressed = false;
+        static bool wasRightPressed = false;
+        
+        // Use ',' (has '<' printed) and '.' (has '>' printed) for switching macOS spaces
+        bool isLeftPressed = M5Cardputer.Keyboard.isKeyPressed(',');
+        bool isRightPressed = M5Cardputer.Keyboard.isKeyPressed('.');
+        
+        if (isLeftPressed && !wasLeftPressed) {
+            uint8_t cmd = 0x02; // 0x02 = Switch Left Space
+            pCommandCharacteristic->setValue(&cmd, 1);
+            pCommandCharacteristic->notify();
+            M5Cardputer.Display.fillCircle(220, 20, 10, BLUE);
+        } else if (!isLeftPressed && wasLeftPressed) {
+            M5Cardputer.Display.fillCircle(220, 20, 10, BLACK);
+        }
+        wasLeftPressed = isLeftPressed;
+
+        if (isRightPressed && !wasRightPressed) {
+            uint8_t cmd = 0x03; // 0x03 = Switch Right Space
+            pCommandCharacteristic->setValue(&cmd, 1);
+            pCommandCharacteristic->notify();
+            M5Cardputer.Display.fillCircle(220, 20, 10, BLUE);
+        } else if (!isRightPressed && wasRightPressed) {
+            M5Cardputer.Display.fillCircle(220, 20, 10, BLACK);
+        }
+        wasRightPressed = isRightPressed;
+
+        // --- Raise to Speak Logic ---
+        // Get IMU data to detect tilt angle
+        float ax = 0.0F, ay = 0.0F, az = 0.0F;
+        M5.Imu.getAccelData(&ax, &ay, &az);
+        
+        // --- Gesture Screen Switch Logic ---
+        static unsigned long lastGestureTime = 0;
+        // 1000ms cooldown to prevent rapid switching
+        if (millis() - lastGestureTime > 1000) {
+            if (ax < -0.6F) { // Tilt Left
+                uint8_t cmd = 0x02; // Switch Left
+                pCommandCharacteristic->setValue(&cmd, 1);
+                pCommandCharacteristic->notify();
+                M5Cardputer.Display.fillCircle(220, 20, 10, BLUE);
+                lastGestureTime = millis();
+            } else if (ax > 0.6F) { // Tilt Right
+                uint8_t cmd = 0x03; // Switch Right
+                pCommandCharacteristic->setValue(&cmd, 1);
+                pCommandCharacteristic->notify();
+                M5Cardputer.Display.fillCircle(220, 20, 10, BLUE);
+                lastGestureTime = millis();
+            }
+        } else if (millis() - lastGestureTime > 500 && millis() - lastGestureTime < 1000) {
+            // Clear the blue circle indicator shortly after switching
+            M5Cardputer.Display.fillCircle(220, 20, 10, BLACK);
+        }
+
+        // When holding the Cardputer like a microphone, the top edge tilts up.
+        // This corresponds to ay becoming significantly negative (e.g. < -0.5G).
+        // Flat on table means ay is around 0.0G.
+        bool isRaised = raiseToSpeakEnabled && (ay < -0.5F);
+        
+        // Support both SPACE key OR Raise gesture
+        bool shouldRecord = M5Cardputer.Keyboard.isKeyPressed(' ') || isRaised;
+
+        // --- Audio Logic ---
+        if (shouldRecord) {
             if (!isRecording) {
-                // Draw indicator once when pressed
+                // Draw indicator once when pressed/raised
                 M5Cardputer.Display.fillCircle(200, 20, 10, RED);
                 isRecording = true;
             }
